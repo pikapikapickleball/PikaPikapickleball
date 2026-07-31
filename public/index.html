@@ -15,32 +15,43 @@
         input, select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
         .req { color: red; }
         
-        /* 模式按鈕各占 50% 手機優化 */
+        /* 模式按鈕各占 50% */
         .tab-btn-group { display: flex; gap: 8px; width: 100%; margin-bottom: 15px; }
         .tab-btn { flex: 1; text-align: center; padding: 12px 0; cursor: pointer; border: 1px solid #007bff; background: #fff; color: #007bff; border-radius: 6px; font-weight: bold; font-size: 16px; }
         .tab-btn.active { background: #007bff; color: white; }
         
         button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
         
-        /* Excel 表格樣式 (適應手機) */
+        /* Excel 表格樣式 */
         .table-wrapper { overflow-x: auto; }
         table.excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }
         table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px 4px; font-size: 13px; }
         table.excel-table th { background-color: #f2f2f2; }
         .booked { background-color: #ffe6e6; color: #d9534f; font-weight: bold; }
-        .cancel-btn { background: #dc3545; color: white; border: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-top: 2px; }
+        
+        /* 按鈕容器（右側排列） */
+        .btn-group-right { display: flex; justify-content: center; gap: 4px; margin-top: 4px; }
+        .cancel-btn { background: #dc3545; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .admin-btn { background: #6c757d; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         
         /* 接龍清單分區樣式 */
         .session-container { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
         @media (min-width: 480px) { .session-container { grid-template-columns: 1fr 1fr; } }
         .session-box { border: 1px solid #b8daff; background: #e8f4ff; border-radius: 6px; padding: 10px; }
         .session-title { font-weight: bold; color: #004085; border-bottom: 1px solid #b8daff; padding-bottom: 5px; margin-bottom: 8px; }
+        
+        /* 接龍清單項目 (左右對齊：文字靠左，按鈕靠右) */
         .session-box ol { padding-left: 20px; margin: 0; }
-        .session-box li { margin-bottom: 6px; font-size: 14px; }
+        .session-box li { margin-bottom: 8px; font-size: 14px; }
+        .list-item-content { display: flex; justify-content: space-between; align-items: center; }
+        .status-tag-main { color: #28a745; font-weight: bold; margin-left: 4px; }
+        .status-tag-sub { color: #fd7e14; font-weight: bold; margin-left: 4px; }
 
         /* 管理員專區樣式 */
         .admin-card { background: #fff3cd; border: 1px solid #ffeeba; }
-        .admin-btn { background: #6c757d; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-left: 5px; }
+        
+        /* 星期顯示樣式 */
+        .weekday-badge { font-weight: bold; color: #007bff; font-size: 16px; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -48,8 +59,11 @@
     <h2>PikaPika匹克球預約與接龍報名</h2>
 
     <div class="card" style="text-align: center;">
-        <label style="display:block; font-size: 16px; margin-bottom: 8px;">📅 請選擇日期：</label>
-        <input type="date" id="date" style="font-size: 16px; text-align: center;" onchange="loadAllData()">
+        <label style="display:block; font-size: 16px; margin-bottom: 8px;">📅 請選擇查看與報名日期：</label>
+        <div style="display: flex; justify-content: center; align-items: center; gap: 8px;">
+            <input type="date" id="date" style="font-size: 16px; text-align: center; width: auto;" onchange="updateWeekdayAndLoad()">
+            <span id="weekdayDisplay" class="weekday-badge"></span>
+        </div>
     </div>
 
     <div class="card">
@@ -105,7 +119,7 @@
     </div>
 
     <div class="card" id="charterTableCard">
-        <h3>📊 今日包場預約狀況</h3>
+        <h3>📊 <span class="selected-date-text"></span> 包場預約狀況</h3>
         <div class="table-wrapper">
             <table class="excel-table">
                 <thead>
@@ -123,7 +137,7 @@
     </div>
 
     <div class="card" id="pickupListCard" style="display: none;">
-        <h3>👥 今日接龍名單</h3>
+        <h3>👥 <span class="selected-date-text"></span> 接龍名單</h3>
         <div class="session-container">
             <div class="session-box">
                 <div class="session-title">🌅 早場 (09-12) <span id="status-morning"></span></div>
@@ -146,25 +160,42 @@
 
     <div class="card admin-card">
         <h3>🛠️ 管理員強制刪除專區</h3>
-        <p style="font-size: 13px; color: #666; text-align: center; margin-top: -5px;">管理員輸入密碼後，可直接強制刪除顯示在上面的任何名單。</p>
+        <p style="font-size: 13px; color: #666; text-align: center; margin-top: -5px;">管理員輸入密碼後，可點選名單右側的【強刪】按鈕進行強制取消。</p>
         <div class="form-group" style="margin-bottom: 10px;">
             <label>管理員密碼：</label>
             <input type="password" id="adminPassword" placeholder="請輸入管理密碼">
         </div>
-        <p id="adminStatusHint" style="font-size: 12px; color: #d9534f; text-align: center; margin: 0;"></p>
     </div>
 
     <script>
         let mode = 'charter';
+        const weekdays = ['(星期日)', '(星期一)', '(星期二)', '(星期三)', '(星期四)', '(星期五)', '(星期六)'];
+
         document.getElementById('date').valueAsDate = new Date();
 
-        // 動態產生時段選單 (不帶 (06:00-24:00) 括號標示)
         const hourSelect = document.getElementById('hour');
         for(let i = 6; i < 24; i++) {
             let opt = document.createElement('option');
             opt.value = i;
             opt.innerText = `${i.toString().padStart(2, '0')}:00 - ${(i+1).toString().padStart(2, '0')}:00`;
             hourSelect.appendChild(opt);
+        }
+
+        function updateWeekdayAndLoad() {
+            const dateVal = document.getElementById('date').value;
+            if (!dateVal) return;
+
+            const dateParts = dateVal.split('-');
+            const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+            const dayName = weekdays[dateObj.getDay()];
+
+            document.getElementById('weekdayDisplay').innerText = dayName;
+
+            document.querySelectorAll('.selected-date-text').forEach(el => {
+                el.innerText = `${dateVal} ${dayName}`;
+            });
+
+            loadAllData();
         }
 
         function switchTab(newMode) {
@@ -184,7 +215,7 @@
             const res = await fetch(`/api/all-data?date=${date}`);
             const data = await res.json();
 
-            // 1. 包場 Excel 表格
+            // 1. 包場 Excel 網格
             const tbody = document.getElementById('excelTableBody');
             tbody.innerHTML = '';
 
@@ -197,8 +228,10 @@
                     if (booking) {
                         tr.innerHTML += `<td class="booked">
                             <div>${booking.name}</div>
-                            <button class="cancel-btn" onclick="cancelBooking('${booking.id}', 'charter')">取消</button>
-                            <button class="admin-btn" onclick="adminCancelBooking('${booking.id}', 'charter')">強刪</button>
+                            <div class="btn-group-right">
+                                <button class="cancel-btn" onclick="cancelBooking('${booking.id}', 'charter')">取消</button>
+                                <button class="admin-btn" onclick="adminCancelBooking('${booking.id}', 'charter')">強刪</button>
+                            </div>
                         </td>`;
                     } else {
                         tr.innerHTML += `<td style="color:#ccc;">-</td>`;
@@ -207,7 +240,7 @@
                 tbody.appendChild(tr);
             }
 
-            // 2. 接龍名單
+            // 2. 接龍名單 (顯示正備取 + 按鈕靠最右側)
             ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
                 const sessData = data.sessions[sess];
                 const listEl = document.getElementById(`list-${sess}`);
@@ -222,20 +255,33 @@
                 }
 
                 if (sessData.list.length > 0) {
-                    listEl.innerHTML = sessData.list.map(b => 
-                        `<li>
-                            ${b.name} 
-                            <button class="cancel-btn" onclick="cancelBooking('${b.id}', 'pickup')">取消</button>
-                            <button class="admin-btn" onclick="adminCancelBooking('${b.id}', 'pickup')">強刪</button>
-                        </li>`
-                    ).join('');
+                    listEl.innerHTML = sessData.list.map((b, idx) => {
+                        // 判斷正取或備取
+                        const isMain = idx < sessData.maxCap;
+                        const statusTag = isMain 
+                            ? `<span class="status-tag-main">(正取)</span>` 
+                            : `<span class="status-tag-sub">(備取)</span>`;
+
+                        return `<li>
+                            <div class="list-item-content">
+                                <div>
+                                    <span>${b.name}</span>
+                                    ${statusTag}
+                                </div>
+                                <div class="btn-group-right">
+                                    <button class="cancel-btn" onclick="cancelBooking('${b.id}', 'pickup')">取消</button>
+                                    <button class="admin-btn" onclick="adminCancelBooking('${b.id}', 'pickup')">強刪</button>
+                                </div>
+                            </div>
+                        </li>`;
+                    }).join('');
                 } else {
                     listEl.innerHTML = '<li>尚無人報名</li>';
                 }
             });
         }
 
-        // 報名提交
+        // 提交報名
         document.getElementById('bookingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const payload = {
@@ -263,7 +309,7 @@
             }
         });
 
-        // 一般使用者取消 (須輸入電話)
+        // 一般取消
         async function cancelBooking(id, type) {
             const phone = prompt('請輸入您報名時填寫的電話號碼以驗證身份：');
             if (!phone) return;
@@ -279,7 +325,7 @@
             if (result.success) loadAllData();
         }
 
-        // 管理員強制刪除 (比對下方輸入的密碼)
+        // 管理員強刪
         async function adminCancelBooking(id, type) {
             const adminPassword = document.getElementById('adminPassword').value;
             if (!adminPassword) {
@@ -300,7 +346,7 @@
             if (result.success) loadAllData();
         }
 
-        loadAllData();
+        updateWeekdayAndLoad();
     </script>
 </body>
 </html>
