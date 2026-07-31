@@ -7,10 +7,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// 從 Render 環境變數讀取管理員密碼，若未設定預設為 admin123
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
 let charterBookings = []; // 包場 [{ id, date, court, hour, name, phone, email }]
 let pickupBookings = [];  // 接龍 [{ id, date, session, name, phone, email, timestamp }]
 
-// 1. 取得完整包場表格資料與接龍資料
+// 1. 取得當天資料 API
 app.get('/api/all-data', (req, res) => {
     const { date } = req.query;
 
@@ -21,11 +24,9 @@ app.get('/api/all-data', (req, res) => {
         night: [21, 22, 23]
     };
 
-    // 過濾該日期的包場與接龍
     const dayCharters = charterBookings.filter(b => b.date === date);
     const dayPickups = pickupBookings.filter(b => b.date === date);
 
-    // 計算各接龍場次的狀態與人數
     const sessionsData = {};
     ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
         const hours = sessionHours[sess];
@@ -61,7 +62,7 @@ app.post('/api/book', (req, res) => {
         return res.status(400).json({ success: false, message: '姓名與電話為必填！' });
     }
 
-    const id = Date.now().toString(); // 生成唯一 ID 供取消使用
+    const id = Date.now().toString();
 
     if (type === 'charter') {
         const h = Number(hour);
@@ -79,32 +80,26 @@ app.post('/api/book', (req, res) => {
     res.status(400).json({ success: false, message: '無效的報名請求' });
 });
 
-// 3. 取消報名 API (檢查 1 小時限制)
+// 3. 一般使用者取消報名 API (須電話認證與1小時限制)
 app.post('/api/cancel', (req, res) => {
     const { id, type, phone } = req.body;
 
-    let booking = null;
-    if (type === 'charter') {
-        booking = charterBookings.find(b => b.id === id);
-    } else {
-        booking = pickupBookings.find(b => b.id === id);
-    }
+    let booking = type === 'charter' 
+        ? charterBookings.find(b => b.id === id) 
+        : pickupBookings.find(b => b.id === id);
 
     if (!booking) {
         return res.status(404).json({ success: false, message: '找不到該筆報名紀錄' });
     }
 
-    // 驗證電話號碼作為簡單身分確認
     if (booking.phone !== phone) {
         return res.status(400).json({ success: false, message: '驗證失敗！電話號碼不符合，無法取消。' });
     }
 
-    // 計算目標開始時間
     let targetTime = new Date(booking.date);
     if (type === 'charter') {
         targetTime.setHours(booking.hour, 0, 0, 0);
     } else {
-        // 接龍各場次的開始時間
         const startHours = { morning: 9, afternoon: 15, evening: 19, night: 21 };
         targetTime.setHours(startHours[booking.session], 0, 0, 0);
     }
@@ -112,7 +107,6 @@ app.post('/api/cancel', (req, res) => {
     const now = new Date();
     const diffInHours = (targetTime - now) / (1000 * 60 * 60);
 
-    // 檢查是否在 1 小時內
     if (diffInHours <= 1) {
         return res.status(400).json({ 
             success: false, 
@@ -120,7 +114,6 @@ app.post('/api/cancel', (req, res) => {
         });
     }
 
-    // 執行取消刪除
     if (type === 'charter') {
         charterBookings = charterBookings.filter(b => b.id !== id);
     } else {
@@ -128,6 +121,23 @@ app.post('/api/cancel', (req, res) => {
     }
 
     res.json({ success: true, message: '預約已成功取消！' });
+});
+
+// 4. 管理員強制刪除 API (比對環境變數密碼，免電話驗證)
+app.post('/api/admin-cancel', (req, res) => {
+    const { id, type, adminPassword } = req.body;
+
+    if (adminPassword !== ADMIN_PASSWORD) {
+        return res.status(403).json({ success: false, message: '管理員密碼錯誤！' });
+    }
+
+    if (type === 'charter') {
+        charterBookings = charterBookings.filter(b => b.id !== id);
+    } else {
+        pickupBookings = pickupBookings.filter(b => b.id !== id);
+    }
+
+    res.json({ success: true, message: '【管理員操作】已成功強制刪除該筆報名！' });
 });
 
 const PORT = process.env.PORT || 3000;

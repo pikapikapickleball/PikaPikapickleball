@@ -5,34 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>匹克球報名與場地預約系統</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 15px; color: #333; }
-        h2, h3 { text-align: center; }
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 10px auto; padding: 12px; color: #333; background-color: #f9f9f9; }
+        h2, h3 { text-align: center; margin-top: 10px; }
         
-        .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
         .form-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-        .form-group { flex: 1; min-width: 150px; }
-        label { display: block; font-weight: bold; margin-bottom: 5px; }
-        input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .form-group { flex: 1; min-width: 120px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        input, select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
         .req { color: red; }
         
-        .tab-btn { padding: 10px 20px; cursor: pointer; border: 1px solid #007bff; background: #fff; color: #007bff; border-radius: 4px; font-weight: bold; margin-right: 5px; }
+        /* 模式按鈕各占 50% 手機優化 */
+        .tab-btn-group { display: flex; gap: 8px; width: 100%; margin-bottom: 15px; }
+        .tab-btn { flex: 1; text-align: center; padding: 12px 0; cursor: pointer; border: 1px solid #007bff; background: #fff; color: #007bff; border-radius: 6px; font-weight: bold; font-size: 16px; }
         .tab-btn.active { background: #007bff; color: white; }
         
-        button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
         
-        /* Excel 表格樣式 */
+        /* Excel 表格樣式 (適應手機) */
+        .table-wrapper { overflow-x: auto; }
         table.excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }
-        table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px; font-size: 14px; }
+        table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px 4px; font-size: 13px; }
         table.excel-table th { background-color: #f2f2f2; }
         .booked { background-color: #ffe6e6; color: #d9534f; font-weight: bold; }
-        .cancel-btn { background: #dc3545; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 5px; }
+        .cancel-btn { background: #dc3545; color: white; border: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-top: 2px; }
         
         /* 接龍清單分區樣式 */
-        .session-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 10px; }
+        .session-container { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
+        @media (min-width: 480px) { .session-container { grid-template-columns: 1fr 1fr; } }
         .session-box { border: 1px solid #b8daff; background: #e8f4ff; border-radius: 6px; padding: 10px; }
         .session-title { font-weight: bold; color: #004085; border-bottom: 1px solid #b8daff; padding-bottom: 5px; margin-bottom: 8px; }
         .session-box ol { padding-left: 20px; margin: 0; }
-        .session-box li { margin-bottom: 5px; }
+        .session-box li { margin-bottom: 6px; font-size: 14px; }
+
+        /* 管理員專區樣式 */
+        .admin-card { background: #fff3cd; border: 1px solid #ffeeba; }
+        .admin-btn { background: #6c757d; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -40,17 +48,17 @@
     <h2>🎾 匹克球預約與接龍報名</h2>
 
     <div class="card" style="text-align: center;">
-        <label style="display:inline-block; font-size: 18px;">📅 請選擇查看與報名日期：</label>
-        <input type="date" id="date" style="width: auto; font-size: 16px;" onchange="loadAllData()">
+        <label style="display:block; font-size: 16px; margin-bottom: 8px;">📅 請選擇日期：</label>
+        <input type="date" id="date" style="font-size: 16px; text-align: center;" onchange="loadAllData()">
     </div>
 
     <div class="card">
-        <div>
+        <div class="tab-btn-group">
             <button type="button" class="tab-btn active" id="btnCharter" onclick="switchTab('charter')">包場報名</button>
             <button type="button" class="tab-btn" id="btnPickup" onclick="switchTab('pickup')">接龍報名</button>
         </div>
 
-        <form id="bookingForm" style="margin-top: 15px;">
+        <form id="bookingForm">
             <div class="form-row">
                 <div class="form-group">
                     <label>姓名 <span class="req">*</span></label>
@@ -58,11 +66,7 @@
                 </div>
                 <div class="form-group">
                     <label>電話號碼 <span class="req">*</span></label>
-                    <input type="tel" id="phone" required placeholder="取消預約認證用">
-                </div>
-                <div class="form-group">
-                    <label>Gmail (選填)</label>
-                    <input type="email" id="email" placeholder="example@gmail.com">
+                    <input type="tel" id="phone" required placeholder="取消認證用">
                 </div>
             </div>
 
@@ -78,7 +82,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>選擇時段 (06:00-24:00)</label>
+                        <label>選擇時段</label>
                         <select id="hour"></select>
                     </div>
                 </div>
@@ -101,24 +105,25 @@
     </div>
 
     <div class="card" id="charterTableCard">
-        <h3>📊 今日包場預約狀況表 (A / B / C / D 場)</h3>
-        <table class="excel-table">
-            <thead>
-                <tr>
-                    <th>時間</th>
-                    <th>A 場</th>
-                    <th>B 場</th>
-                    <th>C 場</th>
-                    <th>D 場</th>
-                </tr>
-            </thead>
-            <tbody id="excelTableBody">
-                </tbody>
-        </table>
+        <h3>📊 今日包場預約狀況</h3>
+        <div class="table-wrapper">
+            <table class="excel-table">
+                <thead>
+                    <tr>
+                        <th>時間</th>
+                        <th>A場</th>
+                        <th>B場</th>
+                        <th>C場</th>
+                        <th>D場</th>
+                    </tr>
+                </thead>
+                <tbody id="excelTableBody"></tbody>
+            </table>
+        </div>
     </div>
 
     <div class="card" id="pickupListCard" style="display: none;">
-        <h3>👥 今日接龍名單 (早 / 午 / 晚 / 宵夜場)</h3>
+        <h3>👥 今日接龍名單</h3>
         <div class="session-container">
             <div class="session-box">
                 <div class="session-title">🌅 早場 (09-12) <span id="status-morning"></span></div>
@@ -139,11 +144,21 @@
         </div>
     </div>
 
+    <div class="card admin-card">
+        <h3>🛠️ 管理員強制刪除專區</h3>
+        <p style="font-size: 13px; color: #666; text-align: center; margin-top: -5px;">管理員輸入密碼後，可直接強制刪除顯示在上面的任何名單。</p>
+        <div class="form-group" style="margin-bottom: 10px;">
+            <label>管理員密碼：</label>
+            <input type="password" id="adminPassword" placeholder="請輸入管理密碼">
+        </div>
+        <p id="adminStatusHint" style="font-size: 12px; color: #d9534f; text-align: center; margin: 0;"></p>
+    </div>
+
     <script>
         let mode = 'charter';
         document.getElementById('date').valueAsDate = new Date();
 
-        // 建立 06:00 ~ 23:00 下拉選單
+        // 動態產生時段選單 (不帶 (06:00-24:00) 括號標示)
         const hourSelect = document.getElementById('hour');
         for(let i = 6; i < 24; i++) {
             let opt = document.createElement('option');
@@ -152,51 +167,47 @@
             hourSelect.appendChild(opt);
         }
 
-        // 切換模式與顯隱面板
         function switchTab(newMode) {
             mode = newMode;
             document.getElementById('btnCharter').classList.toggle('active', mode === 'charter');
             document.getElementById('btnPickup').classList.toggle('active', mode === 'pickup');
             
-            // 表單輸入項目切換
             document.getElementById('charterInputs').style.display = mode === 'charter' ? 'block' : 'none';
             document.getElementById('pickupInputs').style.display = mode === 'pickup' ? 'block' : 'none';
 
-            // 下方顯示區塊切換
             document.getElementById('charterTableCard').style.display = mode === 'charter' ? 'block' : 'none';
             document.getElementById('pickupListCard').style.display = mode === 'pickup' ? 'block' : 'none';
         }
 
-        // 載入當天包場與接龍數據並繪製 UI
         async function loadAllData() {
             const date = document.getElementById('date').value;
             const res = await fetch(`/api/all-data?date=${date}`);
             const data = await res.json();
 
-            // 1. 繪製包場 Excel 表格
+            // 1. 包場 Excel 表格
             const tbody = document.getElementById('excelTableBody');
             tbody.innerHTML = '';
 
             for(let h = 6; h < 24; h++) {
                 let tr = document.createElement('tr');
-                let timeTd = `<td><strong>${h.toString().padStart(2, '0')}:00</strong></td>`;
-                tr.innerHTML = timeTd;
+                tr.innerHTML = `<td><strong>${h.toString().padStart(2, '0')}:00</strong></td>`;
 
                 ['A', 'B', 'C', 'D'].forEach(court => {
                     const booking = data.charters.find(b => b.hour === h && b.court === court);
                     if (booking) {
                         tr.innerHTML += `<td class="booked">
-                            ${booking.name} 
+                            <div>${booking.name}</div>
                             <button class="cancel-btn" onclick="cancelBooking('${booking.id}', 'charter')">取消</button>
+                            <button class="admin-btn" onclick="adminCancelBooking('${booking.id}', 'charter')">強刪</button>
                         </td>`;
                     } else {
-                        tr.innerHTML += `<td style="color:#aaa;">-</td>`;
+                        tr.innerHTML += `<td style="color:#ccc;">-</td>`;
                     }
                 });
                 tbody.appendChild(tr);
             }
 
-            // 2. 繪製接龍分區名單
+            // 2. 接龍名單
             ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
                 const sessData = data.sessions[sess];
                 const listEl = document.getElementById(`list-${sess}`);
@@ -215,6 +226,7 @@
                         `<li>
                             ${b.name} 
                             <button class="cancel-btn" onclick="cancelBooking('${b.id}', 'pickup')">取消</button>
+                            <button class="admin-btn" onclick="adminCancelBooking('${b.id}', 'pickup')">強刪</button>
                         </li>`
                     ).join('');
                 } else {
@@ -230,7 +242,6 @@
                 type: mode,
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
-                email: document.getElementById('email').value,
                 date: document.getElementById('date').value,
                 court: document.getElementById('court').value,
                 hour: document.getElementById('hour').value,
@@ -248,14 +259,13 @@
             if (result.success) {
                 document.getElementById('name').value = '';
                 document.getElementById('phone').value = '';
-                document.getElementById('email').value = '';
                 loadAllData();
             }
         });
 
-        // 取消報名
+        // 一般使用者取消 (須輸入電話)
         async function cancelBooking(id, type) {
-            const phone = prompt('為了確認身分，請輸入您報名時填寫的電話號碼：');
+            const phone = prompt('請輸入您報名時填寫的電話號碼以驗證身份：');
             if (!phone) return;
 
             const res = await fetch('/api/cancel', {
@@ -266,12 +276,30 @@
 
             const result = await res.json();
             alert(result.message);
-            if (result.success) {
-                loadAllData();
-            }
+            if (result.success) loadAllData();
         }
 
-        // 第一次載入頁面
+        // 管理員強制刪除 (比對下方輸入的密碼)
+        async function adminCancelBooking(id, type) {
+            const adminPassword = document.getElementById('adminPassword').value;
+            if (!adminPassword) {
+                alert('請先在最下方的「管理員密碼」欄位輸入密碼，才能使用強刪功能！');
+                return;
+            }
+
+            if (!confirm('確定要以管理員身份【強制刪除】這筆報名嗎？')) return;
+
+            const res = await fetch('/api/admin-cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, type, adminPassword })
+            });
+
+            const result = await res.json();
+            alert(result.message);
+            if (result.success) loadAllData();
+        }
+
         loadAllData();
     </script>
 </body>
