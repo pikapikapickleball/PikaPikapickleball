@@ -23,6 +23,7 @@ const SESSION_HOURS = {
 };
 
 // 核心計算函式：計算當天每個場次的鎖場狀況與名單狀態
+// 核心計算函式：計算當天每個場次的鎖場狀況與名單狀態
 function getDayData(date) {
     const dayCharters = charterBookings.filter(b => b.date === date);
     const dayPickups = pickupBookings.filter(b => b.date === date);
@@ -40,7 +41,7 @@ function getDayData(date) {
             dayCharters.filter(b => b.hour === h).forEach(b => charteredCourtsInSession.add(b.court));
         });
 
-        // 2. 依照 C -> B -> A -> D 順序過濾出可供接龍使用的場地
+        // 2. 依 C -> B -> A -> D 順序過濾出可供接龍使用的場地
         const availCourtsForPickup = PICKUP_COURT_PRIORITY.filter(court => !charteredCourtsInSession.has(court));
 
         // 3. 計算因接龍滿 4 人而鎖定的場地數量 (每滿 4 人鎖 1 場，最多鎖定可用場地數)
@@ -50,19 +51,27 @@ function getDayData(date) {
         // 4. 計算接龍最大容納人數 (每個可用場地 8 人)
         const maxCap = availCourtsForPickup.length * 8;
 
-        // 5. 處理名單每個人的狀態標籤
-        const confirmedThreshold = lockedCourtCount * 4; // 目前已成團解鎖的正取總人數
-        
+        // 5. 處理名單標籤 (重點調整區)
         const listWithStatus = list.map((b, idx) => {
-            const rank = idx + 1; // 報名順位 (1-based)
+            const rank = idx + 1; // 報名順位 (1, 2, 3...)
             let status = '';
 
-            if (rank <= confirmedThreshold) {
-                status = '(正取)';
-            } else if (rank <= maxCap) {
-                status = '(滿4人成團，尚有場地)';
-            } else {
+            if (rank > maxCap) {
+                // 超過當天可容納總人數
                 status = '(今天所有場次已滿)';
+            } else {
+                // 判斷該玩家屬於第幾個場地組別 (第1組: 1~8人, 第2組: 9~16人...)
+                const groupIndex = Math.floor((rank - 1) / 8); 
+                const groupStartRank = groupIndex * 8 + 1;
+                const groupCount = count - (groupIndex * 8); // 該組目前累積報名人數
+
+                if (groupCount >= 4) {
+                    // 該組已經滿 4 人成團，此組 1~8 人全部顯示正取！
+                    status = '(正取)';
+                } else {
+                    // 該組尚未滿 4 人
+                    status = '(滿4人成團，尚有場地)';
+                }
             }
 
             return { ...b, rank, status };
@@ -71,7 +80,7 @@ function getDayData(date) {
         sessionsData[sess] = {
             list: listWithStatus,
             availCourtsCount: availCourtsForPickup.length,
-            lockedCourts: lockedCourts, // 接龍已鎖定的場地 (例: ['C', 'B'])
+            lockedCourts: lockedCourts, // 已鎖定的場地 (例: ['C', 'B'])
             maxCap: maxCap,
             currentCount: count
         };
