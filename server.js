@@ -45,7 +45,12 @@ function getDayData(date) {
         const availCourtsForPickup = PICKUP_COURT_PRIORITY.filter(court => !charteredCourtsInSession.has(court));
 
         // 3. 計算因接龍滿 4 人而鎖定的場地數量 (每滿 4 人鎖 1 場，最多鎖定可用場地數)
-        const lockedCourtCount = Math.min(Math.floor(count / 4), availCourtsForPickup.length);
+        // 正確邏輯：0~3人鎖0場；4~11人鎖1場；12~19人鎖2場...
+        let lockedCountByMath = 0;
+        if (count >= 4) {
+            lockedCountByMath = 1 + Math.floor((count - 4) / 8);
+        }
+        const lockedCourtCount = Math.min(lockedCountByMath, availCourtsForPickup.length);
         const lockedCourts = availCourtsForPickup.slice(0, lockedCourtCount);
 
         // 4. 計算接龍最大容納人數 (每個可用場地 8 人)
