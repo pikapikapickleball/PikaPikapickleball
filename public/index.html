@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>匹克球報名與場地預約系統</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 15px; color: #333; }
+        h2, h3 { text-align: center; }
+        
+        .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .form-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 150px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .req { color: red; }
+        
+        .tab-btn { padding: 10px 20px; cursor: pointer; border: 1px solid #007bff; background: #fff; color: #007bff; border-radius: 4px; font-weight: bold; margin-right: 5px; }
+        .tab-btn.active { background: #007bff; color: white; }
+        
+        button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        
+        /* Excel 表格樣式 */
+        table.excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }
+        table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px; font-size: 14px; }
+        table.excel-table th { background-color: #f2f2f2; }
+        .booked { background-color: #ffe6e6; color: #d9534f; font-weight: bold; }
+        .cancel-btn { background: #dc3545; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 5px; }
+        
+        /* 接龍清單分區樣式 */
+        .session-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 10px; }
+        .session-box { border: 1px solid #b8daff; background: #e8f4ff; border-radius: 6px; padding: 10px; }
+        .session-title { font-weight: bold; color: #004085; border-bottom: 1px solid #b8daff; padding-bottom: 5px; margin-bottom: 8px; }
+        .session-box ol { padding-left: 20px; margin: 0; }
+        .session-box li { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>🎾 匹克球預約與接龍報名</h2>
+
+    <div class="card" style="text-align: center;">
+        <label style="display:inline-block; font-size: 18px;">📅 請選擇查看與報名日期：</label>
+        <input type="date" id="date" style="width: auto; font-size: 16px;" onchange="loadAllData()">
+    </div>
+
+    <div class="card">
+        <div>
+            <button type="button" class="tab-btn active" id="btnCharter" onclick="switchTab('charter')">包場報名</button>
+            <button type="button" class="tab-btn" id="btnPickup" onclick="switchTab('pickup')">接龍報名</button>
+        </div>
+
+        <form id="bookingForm" style="margin-top: 15px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>姓名 <span class="req">*</span></label>
+                    <input type="text" id="name" required placeholder="例如：王小明">
+                </div>
+                <div class="form-group">
+                    <label>電話號碼 <span class="req">*</span></label>
+                    <input type="tel" id="phone" required placeholder="取消預約認證用">
+                </div>
+                <div class="form-group">
+                    <label>Gmail (選填)</label>
+                    <input type="email" id="email" placeholder="example@gmail.com">
+                </div>
+            </div>
+
+            <div id="charterInputs">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>選擇場地</label>
+                        <select id="court">
+                            <option value="A">A 場</option>
+                            <option value="B">B 場</option>
+                            <option value="C">C 場</option>
+                            <option value="D">D 場</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>選擇時段 (06:00-24:00)</label>
+                        <select id="hour"></select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pickupInputs" style="display: none;">
+                <div class="form-group">
+                    <label>選擇場次</label>
+                    <select id="session">
+                        <option value="morning">早場 (09:00 - 12:00)</option>
+                        <option value="afternoon">午場 (15:00 - 18:00)</option>
+                        <option value="evening">晚場 (19:00 - 22:00)</option>
+                        <option value="night">宵夜場 (21:00 - 24:00)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="submit-btn">確認送出報名</button>
+        </form>
+    </div>
+
+    <div class="card" id="charterTableCard">
+        <h3>📊 今日包場預約狀況表 (A / B / C / D 場)</h3>
+        <table class="excel-table">
+            <thead>
+                <tr>
+                    <th>時間</th>
+                    <th>A 場</th>
+                    <th>B 場</th>
+                    <th>C 場</th>
+                    <th>D 場</th>
+                </tr>
+            </thead>
+            <tbody id="excelTableBody">
+                </tbody>
+        </table>
+    </div>
+
+    <div class="card" id="pickupListCard" style="display: none;">
+        <h3>👥 今日接龍名單 (早 / 午 / 晚 / 宵夜場)</h3>
+        <div class="session-container">
+            <div class="session-box">
+                <div class="session-title">🌅 早場 (09-12) <span id="status-morning"></span></div>
+                <ol id="list-morning"><li>尚無人報名</li></ol>
+            </div>
+            <div class="session-box">
+                <div class="session-title">☀️ 午場 (15-18) <span id="status-afternoon"></span></div>
+                <ol id="list-afternoon"><li>尚無人報名</li></ol>
+            </div>
+            <div class="session-box">
+                <div class="session-title">🌙 晚場 (19-22) <span id="status-evening"></span></div>
+                <ol id="list-evening"><li>尚無人報名</li></ol>
+            </div>
+            <div class="session-box">
+                <div class="session-title">🌌 宵夜場 (21-24) <span id="status-night"></span></div>
+                <ol id="list-night"><li>尚無人報名</li></ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mode = 'charter';
+        document.getElementById('date').valueAsDate = new Date();
+
+        // 建立 06:00 ~ 23:00 下拉選單
+        const hourSelect = document.getElementById('hour');
+        for(let i = 6; i < 24; i++) {
+            let opt = document.createElement('option');
+            opt.value = i;
+            opt.innerText = `${i.toString().padStart(2, '0')}:00 - ${(i+1).toString().padStart(2, '0')}:00`;
+            hourSelect.appendChild(opt);
+        }
+
+        // 切換模式與顯隱面板
+        function switchTab(newMode) {
+            mode = newMode;
+            document.getElementById('btnCharter').classList.toggle('active', mode === 'charter');
+            document.getElementById('btnPickup').classList.toggle('active', mode === 'pickup');
+            
+            // 表單輸入項目切換
+            document.getElementById('charterInputs').style.display = mode === 'charter' ? 'block' : 'none';
+            document.getElementById('pickupInputs').style.display = mode === 'pickup' ? 'block' : 'none';
+
+            // 下方顯示區塊切換
+            document.getElementById('charterTableCard').style.display = mode === 'charter' ? 'block' : 'none';
+            document.getElementById('pickupListCard').style.display = mode === 'pickup' ? 'block' : 'none';
+        }
+
+        // 載入當天包場與接龍數據並繪製 UI
+        async function loadAllData() {
+            const date = document.getElementById('date').value;
+            const res = await fetch(`/api/all-data?date=${date}`);
+            const data = await res.json();
+
+            // 1. 繪製包場 Excel 表格
+            const tbody = document.getElementById('excelTableBody');
+            tbody.innerHTML = '';
+
+            for(let h = 6; h < 24; h++) {
+                let tr = document.createElement('tr');
+                let timeTd = `<td><strong>${h.toString().padStart(2, '0')}:00</strong></td>`;
+                tr.innerHTML = timeTd;
+
+                ['A', 'B', 'C', 'D'].forEach(court => {
+                    const booking = data.charters.find(b => b.hour === h && b.court === court);
+                    if (booking) {
+                        tr.innerHTML += `<td class="booked">
+                            ${booking.name} 
+                            <button class="cancel-btn" onclick="cancelBooking('${booking.id}', 'charter')">取消</button>
+                        </td>`;
+                    } else {
+                        tr.innerHTML += `<td style="color:#aaa;">-</td>`;
+                    }
+                });
+                tbody.appendChild(tr);
+            }
+
+            // 2. 繪製接龍分區名單
+            ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
+                const sessData = data.sessions[sess];
+                const listEl = document.getElementById(`list-${sess}`);
+                const statusEl = document.getElementById(`status-${sess}`);
+
+                if (sessData.availCourts === 0 || sessData.currentCount >= sessData.maxCap) {
+                    statusEl.innerText = '(已滿)';
+                    statusEl.style.color = 'red';
+                } else {
+                    statusEl.innerText = `(${sessData.currentCount}/${sessData.maxCap}人)`;
+                    statusEl.style.color = 'green';
+                }
+
+                if (sessData.list.length > 0) {
+                    listEl.innerHTML = sessData.list.map(b => 
+                        `<li>
+                            ${b.name} 
+                            <button class="cancel-btn" onclick="cancelBooking('${b.id}', 'pickup')">取消</button>
+                        </li>`
+                    ).join('');
+                } else {
+                    listEl.innerHTML = '<li>尚無人報名</li>';
+                }
+            });
+        }
+
+        // 報名提交
+        document.getElementById('bookingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                type: mode,
+                name: document.getElementById('name').value,
+                phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value,
+                date: document.getElementById('date').value,
+                court: document.getElementById('court').value,
+                hour: document.getElementById('hour').value,
+                session: document.getElementById('session').value
+            };
+
+            const res = await fetch('/api/book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await res.json();
+            alert(result.message);
+            if (result.success) {
+                document.getElementById('name').value = '';
+                document.getElementById('phone').value = '';
+                document.getElementById('email').value = '';
+                loadAllData();
+            }
+        });
+
+        // 取消報名
+        async function cancelBooking(id, type) {
+            const phone = prompt('為了確認身分，請輸入您報名時填寫的電話號碼：');
+            if (!phone) return;
+
+            const res = await fetch('/api/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, type, phone })
+            });
+
+            const result = await res.json();
+            alert(result.message);
+            if (result.success) {
+                loadAllData();
+            }
+        }
+
+        // 第一次載入頁面
+        loadAllData();
+    </script>
+</body>
+</html>
