@@ -7,50 +7,80 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 請貼上你從 Google Apps Script 複製的 Web App URL
 const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_URL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-let charterBookings = []; // 包場
-let pickupBookings = [];  // 接龍
+let charterBookings = []; // 包場 [{ id, date, court, hour, name, phone, email }]
+let pickupBookings = [];  // 接龍 [{ id, date, session, name, phone, email, timestamp }]
 
-// 幫忙計算當天完整資料的函式
+const PICKUP_COURT_PRIORITY = ['C', 'B', 'A', 'D']; // 接龍扣留場地順序
+
+const SESSION_HOURS = {
+    morning: [9, 10, 11],
+    afternoon: [15, 16, 17],
+    evening: [19, 20, 21],
+    night: [21, 22, 23]
+};
+
+// 核心計算函式：計算當天每個場次的鎖場狀況與名單狀態
 function getDayData(date) {
-    const sessionHours = {
-        morning: [9, 10, 11],
-        afternoon: [15, 16, 17],
-        evening: [19, 20, 21],
-        night: [21, 22, 23]
-    };
-
     const dayCharters = charterBookings.filter(b => b.date === date);
     const dayPickups = pickupBookings.filter(b => b.date === date);
 
     const sessionsData = {};
+
     ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
-        const hours = sessionHours[sess];
-        let maxChartered = 0;
+        const hours = SESSION_HOURS[sess];
+        const list = dayPickups.filter(b => b.session === sess);
+        const count = list.length;
+
+        // 1. 檢查哪些場地在這 3 小時內已被包場預約
+        const charteredCourtsInSession = new Set();
         hours.forEach(h => {
-            const count = dayCharters.filter(b => b.hour === h).length;
-            if (count > maxChartered) maxChartered = count;
+            dayCharters.filter(b => b.hour === h).forEach(b => charteredCourtsInSession.add(b.court));
         });
 
-        const availCourts = Math.max(0, 4 - maxChartered);
-        const maxCap = availCourts * 8;
-        const list = dayPickups.filter(b => b.session === sess);
+        // 2. 依照 C -> B -> A -> D 順序過濾出可供接龍使用的場地
+        const availCourtsForPickup = PICKUP_COURT_PRIORITY.filter(court => !charteredCourtsInSession.has(court));
+
+        // 3. 計算因接龍滿 4 人而鎖定的場地數量 (每滿 4 人鎖 1 場，最多鎖定可用場地數)
+        const lockedCourtCount = Math.min(Math.floor(count / 4), availCourtsForPickup.length);
+        const lockedCourts = availCourtsForPickup.slice(0, lockedCourtCount);
+
+        // 4. 計算接龍最大容納人數 (每個可用場地 8 人)
+        const maxCap = availCourtsForPickup.length * 8;
+
+        // 5. 處理名單每個人的狀態標籤
+        const confirmedThreshold = lockedCourtCount * 4; // 目前已成團解鎖的正取總人數
+        
+        const listWithStatus = list.map((b, idx) => {
+            const rank = idx + 1; // 報名順位 (1-based)
+            let status = '';
+
+            if (rank <= confirmedThreshold) {
+                status = '(正取)';
+            } else if (rank <= maxCap) {
+                status = '(滿4人成團，尚有場地)';
+            } else {
+                status = '(今天所有場次已滿)';
+            }
+
+            return { ...b, rank, status };
+        });
 
         sessionsData[sess] = {
-            list: list,
-            availCourts: availCourts,
+            list: listWithStatus,
+            availCourtsCount: availCourtsForPickup.length,
+            lockedCourts: lockedCourts, // 接龍已鎖定的場地 (例: ['C', 'B'])
             maxCap: maxCap,
-            currentCount: list.length
+            currentCount: count
         };
     });
 
     return { charters: dayCharters, sessions: sessionsData };
 }
 
-// 自動將當天最新名單同步至 Google 試算表的函式
+// 自動將當天最新名單同步至 Google 試算表
 async function syncToGoogleSheet(date) {
     if (!GOOGLE_SHEET_URL || GOOGLE_SHEET_URL.includes("你的GoogleScript網址")) return;
 
@@ -79,7 +109,7 @@ app.get('/api/all-data', (req, res) => {
     res.json(getDayData(date));
 });
 
-// 2. 提交報名 API (含 10 天前開放、1 小時前截止限制)
+// 2. 提交報名 API
 app.post('/api/book', async (req, res) => {
     const { type, name, phone, email, date, court, hour, session } = req.body;
 
@@ -87,6 +117,7 @@ app.post('/api/book', async (req, res) => {
         return res.status(400).json({ success: false, message: '姓名與電話為必填！' });
     }
 
+    // --- 時間限制檢核 ---
     const now = new Date();
     let startTime = new Date(date);
 
@@ -108,22 +139,44 @@ app.post('/api/book', async (req, res) => {
         return res.status(400).json({ success: false, message: '已截止報名！活動開始前 1 小時內無法再報名。' });
     }
 
+    const dayData = getDayData(date);
     const id = Date.now().toString();
 
     if (type === 'charter') {
         const h = Number(hour);
-        const exists = charterBookings.some(b => b.date === date && b.court === court && b.hour === h);
+        
+        // 檢查 1：是否已被其他人包場
+        const exists = dayData.charters.some(b => b.hour === h && b.court === court);
         if (exists) {
             return res.status(400).json({ success: false, message: '該場地該時段已被預約！' });
         }
-        charterBookings.push({ id, date, court, hour: h, name, phone, email });
+
+        // 檢查 2：該場地是否已被接龍鎖定 (C -> B -> A -> D)
+        let isLockedByPickup = false;
+        Object.keys(SESSION_HOURS).forEach(sessKey => {
+            if (SESSION_HOURS[sessKey].includes(h)) {
+                if (dayData.sessions[sessKey].lockedCourts.includes(court)) {
+                    isLockedByPickup = true;
+                }
+            }
+        });
+
+        if (isLockedByPickup) {
+            return res.status(400).json({ success: false, message: `【${court}場】已被接龍報名鎖定，該 3 小時內無法進行包場預約！` });
+        }
+
+        charterBookings.push({ id, date, court, hour: h, name, phone, email: email || '' });
+
     } else if (type === 'pickup') {
-        pickupBookings.push({ id, date, session, name, phone, email, timestamp: new Date() });
+        const sessData = dayData.sessions[session];
+        if (sessData.currentCount >= sessData.maxCap) {
+            return res.status(400).json({ success: false, message: '今天所有場次已滿，無法再報名！' });
+        }
+
+        pickupBookings.push({ id, date, session, name, phone, email: email || '', timestamp: new Date() });
     }
 
-    // 🌟 有人報名成功，自動同步建立/更新 Google 試算表當天分頁！
     syncToGoogleSheet(date);
-
     return res.json({ success: true, message: '報名成功！' });
 });
 
@@ -166,9 +219,7 @@ app.post('/api/cancel', async (req, res) => {
         pickupBookings = pickupBookings.filter(b => b.id !== id);
     }
 
-    // 取消成功後，也同步更新 Google 試算表
     syncToGoogleSheet(bookingDate);
-
     res.json({ success: true, message: '預約已成功取消！' });
 });
 
@@ -191,7 +242,6 @@ app.post('/api/admin-cancel', async (req, res) => {
         } else {
             pickupBookings = pickupBookings.filter(b => b.id !== id);
         }
-        // 強刪成功後同步更新 Google 試算表
         syncToGoogleSheet(bookingDate);
     }
 

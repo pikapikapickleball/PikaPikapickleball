@@ -14,49 +14,45 @@
         label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
         input, select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; }
         .req { color: red; }
+        .opt { color: #888; font-size: 12px; }
         
-        /* 模式按鈕各占 50% */
         .tab-btn-group { display: flex; gap: 8px; width: 100%; margin-bottom: 15px; }
         .tab-btn { flex: 1; text-align: center; padding: 12px 0; cursor: pointer; border: 1px solid #007bff; background: #fff; color: #007bff; border-radius: 6px; font-weight: bold; font-size: 16px; }
         .tab-btn.active { background: #007bff; color: white; }
         
         button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
         
-        /* Excel 表格樣式 */
         .table-wrapper { overflow-x: auto; }
         table.excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }
         table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px 4px; font-size: 13px; }
         table.excel-table th { background-color: #f2f2f2; }
         .booked { background-color: #ffe6e6; color: #d9534f; font-weight: bold; }
+        .locked-pickup { background-color: #e2e3e5; color: #383d41; font-weight: bold; }
         
-        /* 按鈕容器（右側排列） */
         .btn-group-right { display: flex; justify-content: center; gap: 4px; margin-top: 4px; }
         .cancel-btn { background: #dc3545; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .admin-btn { background: #6c757d; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         
-        /* 接龍清單分區樣式 */
         .session-container { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
         @media (min-width: 480px) { .session-container { grid-template-columns: 1fr 1fr; } }
         .session-box { border: 1px solid #b8daff; background: #e8f4ff; border-radius: 6px; padding: 10px; }
         .session-title { font-weight: bold; color: #004085; border-bottom: 1px solid #b8daff; padding-bottom: 5px; margin-bottom: 8px; }
         
-        /* 接龍清單項目 (左右對齊：文字靠左，按鈕靠右) */
         .session-box ol { padding-left: 20px; margin: 0; }
         .session-box li { margin-bottom: 8px; font-size: 14px; }
         .list-item-content { display: flex; justify-content: space-between; align-items: center; }
+        
         .status-tag-main { color: #28a745; font-weight: bold; margin-left: 4px; }
         .status-tag-sub { color: #fd7e14; font-weight: bold; margin-left: 4px; }
+        .status-tag-full { color: #dc3545; font-weight: bold; margin-left: 4px; }
 
-        /* 管理員專區樣式 */
         .admin-card { background: #fff3cd; border: 1px solid #ffeeba; }
-        
-        /* 星期顯示樣式 */
         .weekday-badge { font-weight: bold; color: #007bff; font-size: 16px; margin-left: 5px; }
     </style>
 </head>
 <body>
 
-    <h2>PikaPika匹克球預約與接龍報名</h2>
+    <h2>🎾 匹克球預約與接龍報名</h2>
 
     <div class="card" style="text-align: center;">
         <label style="display:block; font-size: 16px; margin-bottom: 8px;">📅 請選擇查看與報名日期：</label>
@@ -81,6 +77,10 @@
                 <div class="form-group">
                     <label>電話號碼 <span class="req">*</span></label>
                     <input type="tel" id="phone" required placeholder="取消認證用">
+                </div>
+                <div class="form-group">
+                    <label>Gmail <span class="opt">(選填)</span></label>
+                    <input type="email" id="email" placeholder="example@gmail.com">
                 </div>
             </div>
 
@@ -215,9 +215,16 @@
             const res = await fetch(`/api/all-data?date=${date}`);
             const data = await res.json();
 
-            // 1. 包場 Excel 網格
+            // 1. 繪製包場網格 (如果該場地該時段已被接龍鎖定，會顯灰並註記 [接龍專用])
             const tbody = document.getElementById('excelTableBody');
             tbody.innerHTML = '';
+
+            const sessionHoursMap = {
+                morning: [9, 10, 11],
+                afternoon: [15, 16, 17],
+                evening: [19, 20, 21],
+                night: [21, 22, 23]
+            };
 
             for(let h = 6; h < 24; h++) {
                 let tr = document.createElement('tr');
@@ -225,6 +232,15 @@
 
                 ['A', 'B', 'C', 'D'].forEach(court => {
                     const booking = data.charters.find(b => b.hour === h && b.court === court);
+
+                    // 檢查這個時間這個場地有沒有被接龍鎖定
+                    let lockedByPickup = false;
+                    Object.keys(sessionHoursMap).forEach(sKey => {
+                        if (sessionHoursMap[sKey].includes(h) && data.sessions[sKey].lockedCourts.includes(court)) {
+                            lockedByPickup = true;
+                        }
+                    });
+
                     if (booking) {
                         tr.innerHTML += `<td class="booked">
                             <div>${booking.name}</div>
@@ -233,6 +249,8 @@
                                 <button class="admin-btn" onclick="adminCancelBooking('${booking.id}', 'charter')">強刪</button>
                             </div>
                         </td>`;
+                    } else if (lockedByPickup) {
+                        tr.innerHTML += `<td class="locked-pickup">[接龍扣留]</td>`;
                     } else {
                         tr.innerHTML += `<td style="color:#ccc;">-</td>`;
                     }
@@ -240,33 +258,26 @@
                 tbody.appendChild(tr);
             }
 
-            // 2. 接龍名單 (顯示正備取 + 按鈕靠最右側)
+            // 2. 繪製接龍名單 (包含狀態與按鈕靠右)
             ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
                 const sessData = data.sessions[sess];
                 const listEl = document.getElementById(`list-${sess}`);
                 const statusEl = document.getElementById(`status-${sess}`);
 
-                if (sessData.availCourts === 0 || sessData.currentCount >= sessData.maxCap) {
-                    statusEl.innerText = '(已滿)';
-                    statusEl.style.color = 'red';
-                } else {
-                    statusEl.innerText = `(${sessData.currentCount}/${sessData.maxCap}人)`;
-                    statusEl.style.color = 'green';
-                }
+                statusEl.innerText = `(${sessData.currentCount}/${sessData.maxCap}人)`;
+                statusEl.style.color = sessData.currentCount >= sessData.maxCap ? 'red' : 'green';
 
                 if (sessData.list.length > 0) {
-                    listEl.innerHTML = sessData.list.map((b, idx) => {
-                        // 判斷正取或備取
-                        const isMain = idx < sessData.maxCap;
-                        const statusTag = isMain 
-                            ? `<span class="status-tag-main">(正取)</span>` 
-                            : `<span class="status-tag-sub">(備取)</span>`;
+                    listEl.innerHTML = sessData.list.map(b => {
+                        let tagClass = 'status-tag-sub';
+                        if (b.status === '(正取)') tagClass = 'status-tag-main';
+                        if (b.status === '(今天所有場次已滿)') tagClass = 'status-tag-full';
 
                         return `<li>
                             <div class="list-item-content">
                                 <div>
                                     <span>${b.name}</span>
-                                    ${statusTag}
+                                    <span class="${tagClass}">${b.status}</span>
                                 </div>
                                 <div class="btn-group-right">
                                     <button class="cancel-btn" onclick="cancelBooking('${b.id}', 'pickup')">取消</button>
@@ -288,6 +299,7 @@
                 type: mode,
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value,
                 date: document.getElementById('date').value,
                 court: document.getElementById('court').value,
                 hour: document.getElementById('hour').value,
@@ -305,6 +317,7 @@
             if (result.success) {
                 document.getElementById('name').value = '';
                 document.getElementById('phone').value = '';
+                document.getElementById('email').value = '';
                 loadAllData();
             }
         });
