@@ -22,7 +22,28 @@ const SESSION_HOURS = {
     night: [21, 22, 23]
 };
 
-// 核心計算函式：計算當天每個場次的鎖場狀況與名單狀態
+// 伺服器啟動時從 Google 試算表同步歷史預約資料
+async function initDataFromGoogleSheet() {
+    if (!GOOGLE_SHEET_URL || GOOGLE_SHEET_URL.includes("你的GoogleScript網址")) {
+        console.log("[Init] 未設定有效的 GOOGLE_SHEET_URL，跳過啟動資料載入。");
+        return;
+    }
+
+    try {
+        console.log("[Init] 正在從 Google 試算表載入歷史資料...");
+        const res = await fetch(GOOGLE_SHEET_URL);
+        const data = await res.json();
+
+        if (data.charters && data.pickups) {
+            charterBookings = data.charters;
+            pickupBookings = data.pickups;
+            console.log(`[Init] 成功載入 ${charterBookings.length} 筆包場資料與 ${pickupBookings.length} 筆接龍資料！`);
+        }
+    } catch (err) {
+        console.error("[Init] 從 Google 試算表載入資料時發生錯誤:", err);
+    }
+}
+
 // 核心計算函式：計算當天每個場次的鎖場狀況與名單狀態
 function getDayData(date) {
     const dayCharters = charterBookings.filter(b => b.date === date);
@@ -41,42 +62,29 @@ function getDayData(date) {
             dayCharters.filter(b => b.hour === h).forEach(b => charteredCourtsInSession.add(b.court));
         });
 
-        // 2. 依 C -> B -> A -> D 順序過濾出可供接龍使用的場地
+        // 2. 依照 C -> B -> A -> D 順序過濾出可供接龍使用的場地
         const availCourtsForPickup = PICKUP_COURT_PRIORITY.filter(court => !charteredCourtsInSession.has(court));
 
-        // 3. 計算因接龍滿 4 人而鎖定的場地數量 (每滿 4 人鎖 1 場，最多鎖定可用場地數)
-        // 正確邏輯：0~3人鎖0場；4~11人鎖1場；12~19人鎖2場...
-        let lockedCountByMath = 0;
-        if (count >= 4) {
-            lockedCountByMath = 1 + Math.floor((count - 4) / 8);
-        }
-        const lockedCourtCount = Math.min(lockedCountByMath, availCourtsForPickup.length);
+        // 3. 計算因接龍滿 4 人而鎖定的場地數量
+        const lockedCourtCount = Math.min(Math.floor(count / 4), availCourtsForPickup.length);
         const lockedCourts = availCourtsForPickup.slice(0, lockedCourtCount);
 
-        // 4. 計算接龍最大容納人數 (每個可用場地 8 人)
+        // 4. 計算接龍最大容納人數
         const maxCap = availCourtsForPickup.length * 8;
 
-        // 5. 處理名單標籤 (重點調整區)
+        // 5. 處理名單狀態標籤
+        const confirmedThreshold = lockedCourtCount * 4;
+        
         const listWithStatus = list.map((b, idx) => {
-            const rank = idx + 1; // 報名順位 (1, 2, 3...)
+            const rank = idx + 1;
             let status = '';
 
-            if (rank > maxCap) {
-                // 超過當天可容納總人數
-                status = '(今天所有場次已滿)';
+            if (rank <= confirmedThreshold) {
+                status = '(正取)';
+            } else if (rank <= maxCap) {
+                status = '(滿4人成團，尚有場地)';
             } else {
-                // 判斷該玩家屬於第幾個場地組別 (第1組: 1~8人, 第2組: 9~16人...)
-                const groupIndex = Math.floor((rank - 1) / 8); 
-                const groupStartRank = groupIndex * 8 + 1;
-                const groupCount = count - (groupIndex * 8); // 該組目前累積報名人數
-
-                if (groupCount >= 4) {
-                    // 該組已經滿 4 人成團，此組 1~8 人全部顯示正取！
-                    status = '(正取)';
-                } else {
-                    // 該組尚未滿 4 人
-                    status = '(滿4人成團，尚有場地)';
-                }
+                status = '(今天所有場次已滿)';
             }
 
             return { ...b, rank, status };
@@ -85,7 +93,7 @@ function getDayData(date) {
         sessionsData[sess] = {
             list: listWithStatus,
             availCourtsCount: availCourtsForPickup.length,
-            lockedCourts: lockedCourts, // 已鎖定的場地 (例: ['C', 'B'])
+            lockedCourts: lockedCourts,
             maxCap: maxCap,
             currentCount: count
         };
@@ -131,7 +139,6 @@ app.post('/api/book', async (req, res) => {
         return res.status(400).json({ success: false, message: '姓名與電話為必填！' });
     }
 
-    // --- 時間限制檢核 ---
     const now = new Date();
     let startTime = new Date(date);
 
@@ -159,13 +166,11 @@ app.post('/api/book', async (req, res) => {
     if (type === 'charter') {
         const h = Number(hour);
         
-        // 檢查 1：是否已被其他人包場
         const exists = dayData.charters.some(b => b.hour === h && b.court === court);
         if (exists) {
             return res.status(400).json({ success: false, message: '該場地該時段已被預約！' });
         }
 
-        // 檢查 2：該場地是否已被接龍鎖定 (C -> B -> A -> D)
         let isLockedByPickup = false;
         Object.keys(SESSION_HOURS).forEach(sessKey => {
             if (SESSION_HOURS[sessKey].includes(h)) {
@@ -263,4 +268,8 @@ app.post('/api/admin-cancel', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, async () => {
+    console.log(`Server is running on port ${PORT}`);
+    // 啟動時自動加載歷史資料
+    await initDataFromGoogleSheet();
+});

@@ -21,7 +21,8 @@
         .tab-btn.active { background: #007bff; color: white; }
         
         button.submit-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
-        
+        button.submit-btn:disabled { background: #6c757d; cursor: not-allowed; }
+
         .table-wrapper { overflow-x: auto; }
         table.excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }
         table.excel-table th, table.excel-table td { border: 1px solid #ccc; padding: 8px 4px; font-size: 13px; }
@@ -52,7 +53,7 @@
 </head>
 <body>
 
-    <h2>PikaPika匹克球預約與接龍報名</h2>
+    <h2>🎾 匹克球預約與接龍報名</h2>
 
     <div class="card" style="text-align: center;">
         <label style="display:block; font-size: 16px; margin-bottom: 8px;">📅 請選擇查看與報名日期：</label>
@@ -88,12 +89,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>選擇場地</label>
-                        <select id="court">
-                            <option value="A">A 場</option>
-                            <option value="B">B 場</option>
-                            <option value="C">C 場</option>
-                            <option value="D">D 場</option>
-                        </select>
+                        <select id="court" onchange="renderAvailableDropdowns()"></select>
                     </div>
                     <div class="form-group">
                         <label>選擇時段</label>
@@ -105,16 +101,11 @@
             <div id="pickupInputs" style="display: none;">
                 <div class="form-group">
                     <label>選擇場次</label>
-                    <select id="session">
-                        <option value="morning">早場 (09:00 - 12:00)</option>
-                        <option value="afternoon">午場 (15:00 - 18:00)</option>
-                        <option value="evening">晚場 (19:00 - 22:00)</option>
-                        <option value="night">宵夜場 (21:00 - 24:00)</option>
-                    </select>
+                    <select id="session"></select>
                 </div>
             </div>
 
-            <button type="submit" class="submit-btn">確認送出報名</button>
+            <button type="submit" id="submitBtn" class="submit-btn">確認送出報名</button>
         </form>
     </div>
 
@@ -169,17 +160,10 @@
 
     <script>
         let mode = 'charter';
+        let globalData = null; // 暫存伺服器回傳的數據
         const weekdays = ['(星期日)', '(星期一)', '(星期二)', '(星期三)', '(星期四)', '(星期五)', '(星期六)'];
 
         document.getElementById('date').valueAsDate = new Date();
-
-        const hourSelect = document.getElementById('hour');
-        for(let i = 6; i < 24; i++) {
-            let opt = document.createElement('option');
-            opt.value = i;
-            opt.innerText = `${i.toString().padStart(2, '0')}:00 - ${(i+1).toString().padStart(2, '0')}:00`;
-            hourSelect.appendChild(opt);
-        }
 
         function updateWeekdayAndLoad() {
             const dateVal = document.getElementById('date').value;
@@ -208,14 +192,16 @@
 
             document.getElementById('charterTableCard').style.display = mode === 'charter' ? 'block' : 'none';
             document.getElementById('pickupListCard').style.display = mode === 'pickup' ? 'block' : 'none';
+
+            renderAvailableDropdowns();
         }
 
         async function loadAllData() {
             const date = document.getElementById('date').value;
             const res = await fetch(`/api/all-data?date=${date}`);
-            const data = await res.json();
+            globalData = await res.json();
 
-            // 1. 繪製包場網格 (如果該場地該時段已被接龍鎖定，會顯灰並註記 [接龍專用])
+            // 1. 繪製包場網格
             const tbody = document.getElementById('excelTableBody');
             tbody.innerHTML = '';
 
@@ -231,12 +217,11 @@
                 tr.innerHTML = `<td><strong>${h.toString().padStart(2, '0')}:00</strong></td>`;
 
                 ['A', 'B', 'C', 'D'].forEach(court => {
-                    const booking = data.charters.find(b => b.hour === h && b.court === court);
+                    const booking = globalData.charters.find(b => b.hour === h && b.court === court);
 
-                    // 檢查這個時間這個場地有沒有被接龍鎖定
                     let lockedByPickup = false;
                     Object.keys(sessionHoursMap).forEach(sKey => {
-                        if (sessionHoursMap[sKey].includes(h) && data.sessions[sKey].lockedCourts.includes(court)) {
+                        if (sessionHoursMap[sKey].includes(h) && globalData.sessions[sKey].lockedCourts.includes(court)) {
                             lockedByPickup = true;
                         }
                     });
@@ -258,9 +243,9 @@
                 tbody.appendChild(tr);
             }
 
-            // 2. 繪製接龍名單 (包含狀態與按鈕靠右)
+            // 2. 繪製接龍名單
             ['morning', 'afternoon', 'evening', 'night'].forEach(sess => {
-                const sessData = data.sessions[sess];
+                const sessData = globalData.sessions[sess];
                 const listEl = document.getElementById(`list-${sess}`);
                 const statusEl = document.getElementById(`status-${sess}`);
 
@@ -290,11 +275,153 @@
                     listEl.innerHTML = '<li>尚無人報名</li>';
                 }
             });
+
+            // 3. 重新計算並過濾「可報名選項」
+            renderAvailableDropdowns();
+        }
+
+        // 動態過濾並渲染下拉選單（刪除不可選項目）
+        function renderAvailableDropdowns() {
+            if (!globalData) return;
+
+            const selectedDate = document.getElementById('date').value;
+            const now = new Date();
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (mode === 'charter') {
+                const courtSelect = document.getElementById('court');
+                const hourSelect = document.getElementById('hour');
+                
+                // 保留現有選取的場地
+                let currentCourt = courtSelect.value || 'A';
+
+                // 1. 過濾可選的「場地」
+                const allCourts = ['A', 'B', 'C', 'D'];
+                courtSelect.innerHTML = '';
+                
+                allCourts.forEach(c => {
+                    let opt = document.createElement('option');
+                    opt.value = c;
+                    opt.innerText = `${c} 場`;
+                    courtSelect.appendChild(opt);
+                });
+
+                if ([...courtSelect.options].some(o => o.value === currentCourt)) {
+                    courtSelect.value = currentCourt;
+                }
+                
+                currentCourt = courtSelect.value;
+
+                // 2. 過濾可選的「時段」
+                hourSelect.innerHTML = '';
+                const sessionHoursMap = {
+                    morning: [9, 10, 11],
+                    afternoon: [15, 16, 17],
+                    evening: [19, 20, 21],
+                    night: [21, 22, 23]
+                };
+
+                let validHoursCount = 0;
+
+                for (let h = 6; h < 24; h++) {
+                    let startTime = new Date(selectedDate);
+                    startTime.setHours(h, 0, 0, 0);
+
+                    const diffInHours = (startTime - now) / (1000 * 60 * 60);
+                    const diffInDays = diffInHours / 24;
+
+                    // 條件 A: 必須在 10 天內且距離開始至少 1 小時
+                    if (diffInDays > 10 || diffInHours < 1) continue;
+
+                    // 條件 B: 該時段該場地不能已被包場
+                    const isChartered = globalData.charters.some(b => b.hour === h && b.court === currentCourt);
+                    if (isChartered) continue;
+
+                    // 條件 C: 該時段該場地不能被接龍鎖定
+                    let isLockedByPickup = false;
+                    Object.keys(sessionHoursMap).forEach(sKey => {
+                        if (sessionHoursMap[sKey].includes(h) && globalData.sessions[sKey].lockedCourts.includes(currentCourt)) {
+                            isLockedByPickup = true;
+                        }
+                    });
+                    if (isLockedByPickup) continue;
+
+                    // 通過檢查，新增為可選項
+                    let opt = document.createElement('option');
+                    opt.value = h;
+                    opt.innerText = `${h.toString().padStart(2, '0')}:00 - ${(h+1).toString().padStart(2, '0')}:00`;
+                    hourSelect.appendChild(opt);
+                    validHoursCount++;
+                }
+
+                if (validHoursCount === 0) {
+                    let opt = document.createElement('option');
+                    opt.value = '';
+                    opt.innerText = '（當天此場地已無可預約時段）';
+                    hourSelect.appendChild(opt);
+                    submitBtn.disabled = true;
+                } else {
+                    submitBtn.disabled = false;
+                }
+
+            } else if (mode === 'pickup') {
+                const sessionSelect = document.getElementById('session');
+                sessionSelect.innerHTML = '';
+
+                const sessionsConfig = [
+                    { value: 'morning', text: '早場 (09:00 - 12:00)', startHour: 9 },
+                    { value: 'afternoon', text: '午場 (15:00 - 18:00)', startHour: 15 },
+                    { value: 'evening', text: '晚場 (19:00 - 22:00)', startHour: 19 },
+                    { value: 'night', text: '宵夜場 (21:00 - 24:00)', startHour: 21 }
+                ];
+
+                let validSessionsCount = 0;
+
+                sessionsConfig.forEach(s => {
+                    let startTime = new Date(selectedDate);
+                    startTime.setHours(s.startHour, 0, 0, 0);
+
+                    const diffInHours = (startTime - now) / (1000 * 60 * 60);
+                    const diffInDays = diffInHours / 24;
+
+                    // 條件 1: 必須在 10 天內且距離開始至少 1 小時
+                    if (diffInDays > 10 || diffInHours < 1) return;
+
+                    // 條件 2: 該場次不可額滿
+                    const sessData = globalData.sessions[s.value];
+                    if (sessData.currentCount >= sessData.maxCap) return;
+
+                    let opt = document.createElement('option');
+                    opt.value = s.value;
+                    opt.innerText = s.text;
+                    sessionSelect.appendChild(opt);
+                    validSessionsCount++;
+                });
+
+                if (validSessionsCount === 0) {
+                    let opt = document.createElement('option');
+                    opt.value = '';
+                    opt.innerText = '（當天已無可報名場次或已截止）';
+                    sessionSelect.appendChild(opt);
+                    submitBtn.disabled = true;
+                } else {
+                    submitBtn.disabled = false;
+                }
+            }
         }
 
         // 提交報名
         document.getElementById('bookingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            const hourVal = document.getElementById('hour').value;
+            const sessionVal = document.getElementById('session').value;
+
+            if ((mode === 'charter' && !hourVal) || (mode === 'pickup' && !sessionVal)) {
+                alert('目前沒有可選的有效時段或場次！');
+                return;
+            }
+
             const payload = {
                 type: mode,
                 name: document.getElementById('name').value,
@@ -302,8 +429,8 @@
                 email: document.getElementById('email').value,
                 date: document.getElementById('date').value,
                 court: document.getElementById('court').value,
-                hour: document.getElementById('hour').value,
-                session: document.getElementById('session').value
+                hour: hourVal,
+                session: sessionVal
             };
 
             const res = await fetch('/api/book', {
